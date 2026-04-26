@@ -106,7 +106,20 @@ export type ConnectionStatus = {
   message: string;
 };
 
-const API_BASE = "https://gt.digigalaxy.cloud/api";
+export type RecordKind = "customer" | "vehicle" | "load";
+
+export type EditableRecord = {
+  kind: RecordKind;
+  doctype: string;
+  id: string;
+  label: string;
+  tenant?: string;
+  desk_url: string;
+  fields: Record<string, string | number | null | undefined>;
+};
+
+const API_BASE = import.meta.env.VITE_API_BASE || "/api/frappe";
+export const FRAPPE_ORIGIN = import.meta.env.VITE_FRAPPE_URL || "https://gt.digigalaxy.cloud";
 
 function extractServerMessage(payload: any, fallback: string): string {
   const raw = payload?._server_messages;
@@ -256,31 +269,21 @@ export async function getFleetMap() {
   return request<FleetMap>("/method/goods_transport.api.simple.get_fleet_map");
 }
 
+export async function getRecord(kind: RecordKind, id: string) {
+  const params = new URLSearchParams({ kind, name: id });
+  return request<EditableRecord>(`/method/goods_transport.api.simple.get_record?${params}`);
+}
+
+export async function updateRecord(kind: RecordKind, id: string, data: Record<string, unknown>) {
+  return request<EditableRecord>("/method/goods_transport.api.simple.update_record", {
+    method: "POST",
+    body: JSON.stringify({ kind, name: id, data }),
+  });
+}
+
 export async function getConnectionStatus(): Promise<ConnectionStatus> {
   try {
-    await request<string>("/method/ping");
-
-    let loggedUser = "Guest";
-    try {
-      loggedUser = await request<string>("/method/frappe.auth.get_logged_user");
-    } catch {
-      return {
-        reachable: true,
-        authenticated: false,
-        user: null,
-        message: "Backend reachable (session not authenticated)",
-      };
-    }
-
-    const authenticated = Boolean(loggedUser && loggedUser !== "Guest");
-    return {
-      reachable: true,
-      authenticated,
-      user: authenticated ? loggedUser : null,
-      message: authenticated
-        ? `Backend reachable • Logged in as ${loggedUser}`
-        : "Backend reachable • Guest session",
-    };
+    return await request<ConnectionStatus>("/method/goods_transport.api.simple.connection_status");
   } catch (caught) {
     return {
       reachable: false,

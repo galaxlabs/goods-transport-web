@@ -6,11 +6,13 @@ import {
   Boxes,
   CheckCircle2,
   ClipboardList,
+  ExternalLink,
   Gauge,
   LayoutDashboard,
   LogIn,
   MapPinned,
   Menu,
+  Pencil,
   Route,
   Search,
   Truck,
@@ -28,15 +30,20 @@ import {
   createVehicle,
   CustomerRow,
   DashboardSummary,
+  EditableRecord,
   FleetMap,
+  FRAPPE_ORIGIN,
   getConnectionStatus,
   getDashboard,
   getFleetMap,
+  getRecord,
   listCustomers,
   listLoads,
   listVehicles,
   LoadRow,
   login,
+  RecordKind,
+  updateRecord,
   VehicleRow,
 } from "./frappe";
 
@@ -64,6 +71,7 @@ export function DispatchApp() {
   const [fleetMap, setFleetMap] = useState<FleetMap | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sessionUser, setSessionUser] = useState("");
+  const [selectedRecord, setSelectedRecord] = useState<EditableRecord | null>(null);
   const [connection, setConnection] = useState<ConnectionStatus>({
     reachable: false,
     authenticated: false,
@@ -98,13 +106,18 @@ export function DispatchApp() {
     if (status.authenticated && status.user) {
       setSessionUser(status.user);
     }
+    return status;
   }
 
   useEffect(() => {
-    refreshData("").catch((caught) => {
-      pushToast("error", caught instanceof Error ? caught.message : "Unable to connect to backend");
-    });
-    refreshConnection().catch(() => undefined);
+    refreshConnection()
+      .then((status) => {
+        if (status.authenticated) {
+          return refreshData("");
+        }
+        return undefined;
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -115,13 +128,17 @@ export function DispatchApp() {
   }, []);
 
   useEffect(() => {
+    if (!connection.authenticated) {
+      return undefined;
+    }
+
     const timer = window.setTimeout(() => {
       refreshData(search).catch((caught) => {
         pushToast("error", caught instanceof Error ? caught.message : "Unable to refresh data");
       });
     }, 220);
     return () => window.clearTimeout(timer);
-  }, [search]);
+  }, [connection.authenticated, search]);
 
   async function submitLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -132,6 +149,7 @@ export function DispatchApp() {
       const res = await login(String(form.get("username")), String(form.get("password")));
       if (res.full_name) setSessionUser(res.full_name);
       await refreshConnection();
+      await refreshData(search);
       pushToast("success", `Connected as ${res.full_name || "user"}`);
       formEl.reset();
     } catch (caught) {
@@ -196,6 +214,32 @@ export function DispatchApp() {
       pushToast("success", title);
     } catch (caught) {
       pushToast("error", caught instanceof Error ? caught.message : "Request failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openRecord(kind: RecordKind, id: string) {
+    setBusy(true);
+    try {
+      const record = await getRecord(kind, id);
+      setSelectedRecord(record);
+    } catch (caught) {
+      pushToast("error", caught instanceof Error ? caught.message : "Unable to open record");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveRecord(record: EditableRecord, fields: Record<string, unknown>) {
+    setBusy(true);
+    try {
+      const updated = await updateRecord(record.kind, record.id, fields);
+      setSelectedRecord(updated);
+      await refreshData(search);
+      pushToast("success", `${updated.label} saved`);
+    } catch (caught) {
+      pushToast("error", caught instanceof Error ? caught.message : "Unable to save record");
     } finally {
       setBusy(false);
     }
@@ -333,15 +377,15 @@ export function DispatchApp() {
             <Dashboard dashboard={dashboard} vehicles={vehicles} loads={loads} />
           )}
           {activePage === "customers" && (
-            <CustomersPage rows={customers} busy={busy} onSubmit={submitCustomer} />
+            <CustomersPage rows={customers} busy={busy} onSubmit={submitCustomer} onOpen={openRecord} />
           )}
           {activePage === "vehicles" && (
-            <VehiclesPage rows={vehicles} busy={busy} onSubmit={submitVehicle} />
+            <VehiclesPage rows={vehicles} busy={busy} onSubmit={submitVehicle} onOpen={openRecord} />
           )}
           {activePage === "loads" && (
-            <LoadsPage rows={loads} busy={busy} onSubmit={submitLoad} />
+            <LoadsPage rows={loads} busy={busy} onSubmit={submitLoad} onOpen={openRecord} />
           )}
-          {activePage === "map" && <MapPage fleetMap={fleetMap} />}
+          {activePage === "map" && <MapPage fleetMap={fleetMap} onOpen={openRecord} />}
         </main>
 
         <footer className="app-footer">
@@ -359,6 +403,15 @@ export function DispatchApp() {
           </div>
         ))}
       </div>
+
+      {selectedRecord && (
+        <RecordDrawer
+          busy={busy}
+          record={selectedRecord}
+          onClose={() => setSelectedRecord(null)}
+          onSave={saveRecord}
+        />
+      )}
     </div>
   );
 }
@@ -439,10 +492,12 @@ function CustomersPage({
   rows,
   busy,
   onSubmit,
+  onOpen,
 }: {
   rows: CustomerRow[];
   busy: boolean;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onOpen: (kind: RecordKind, id: string) => void;
 }) {
   return (
     <div className="page-content">
@@ -486,6 +541,8 @@ function CustomersPage({
         </form>
         <DataTable
           title="Customer List"
+          kind="customer"
+          onOpen={onOpen}
           rows={rows.map((row) => ({
             id: row.id,
             cells: [
@@ -509,10 +566,12 @@ function VehiclesPage({
   rows,
   busy,
   onSubmit,
+  onOpen,
 }: {
   rows: VehicleRow[];
   busy: boolean;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onOpen: (kind: RecordKind, id: string) => void;
 }) {
   return (
     <div className="page-content">
@@ -558,6 +617,8 @@ function VehiclesPage({
         </form>
         <DataTable
           title="Vehicle List"
+          kind="vehicle"
+          onOpen={onOpen}
           rows={rows.map((row) => ({
             id: row.id,
             cells: [
@@ -581,10 +642,12 @@ function LoadsPage({
   rows,
   busy,
   onSubmit,
+  onOpen,
 }: {
   rows: LoadRow[];
   busy: boolean;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onOpen: (kind: RecordKind, id: string) => void;
 }) {
   return (
     <div className="page-content">
@@ -651,6 +714,8 @@ function LoadsPage({
         </form>
         <DataTable
           title="Load List"
+          kind="load"
+          onOpen={onOpen}
           rows={rows.map((row) => ({
             id: row.id,
             cells: [
@@ -678,7 +743,7 @@ function LoadsPage({
 
 /* ─── Map page ───────────────────────────────────────────────────────────── */
 
-function MapPage({ fleetMap }: { fleetMap: FleetMap | null }) {
+function MapPage({ fleetMap, onOpen }: { fleetMap: FleetMap | null; onOpen: (kind: RecordKind, id: string) => void }) {
   const vehicles = fleetMap?.vehicles || [];
   return (
     <div className="page-content">
@@ -722,6 +787,8 @@ function MapPage({ fleetMap }: { fleetMap: FleetMap | null }) {
         </div>
         <DataTable
           title="Fleet Vehicles"
+          kind="vehicle"
+          onOpen={onOpen}
           rows={vehicles.map((row) => ({
             id: row.id,
             cells: [
@@ -828,10 +895,14 @@ function DataTable({
   title,
   headers,
   rows,
+  kind,
+  onOpen,
 }: {
   title: string;
   headers: string[];
   rows: Array<{ id: string; cells: React.ReactNode[] }>;
+  kind: RecordKind;
+  onOpen: (kind: RecordKind, id: string) => void;
 }) {
   return (
     <section className="panel table-panel">
@@ -843,14 +914,32 @@ function DataTable({
               {headers.map((header) => (
                 <th key={header}>{header}</th>
               ))}
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id}>
+              <tr key={row.id} onDoubleClick={() => onOpen(kind, row.id)}>
                 {row.cells.map((cell, index) => (
                   <td key={`${row.id}-${index}`}>{cell}</td>
                 ))}
+                <td>
+                  <div className="row-actions">
+                    <button className="table-action" onClick={() => onOpen(kind, row.id)} type="button">
+                      <Pencil size={13} />
+                      Edit
+                    </button>
+                    <a
+                      className="table-action table-link"
+                      href={`${FRAPPE_ORIGIN}/app/${kind === "customer" ? "commodity-customer" : kind === "vehicle" ? "transport-vehicle" : "transport-load"}/${row.id}`}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      <ExternalLink size={13} />
+                      Desk
+                    </a>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -858,6 +947,168 @@ function DataTable({
         {!rows.length && <p className="table-empty">No rows match this view yet.</p>}
       </div>
     </section>
+  );
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  address: "Address",
+  business_name: "Business Name",
+  capacity_volume: "Capacity Volume",
+  capacity_weight: "Capacity Weight",
+  capacity_weight_unit: "Capacity Unit",
+  city: "City",
+  current_lat: "Latitude",
+  current_lng: "Longitude",
+  customer_name: "Customer Name",
+  customer_type: "Customer Type",
+  destination_city: "Destination City",
+  email: "Email",
+  load_type: "Load Type",
+  mobile: "Mobile",
+  origin_city: "Origin City",
+  posting_date: "Posting Date",
+  remarks: "Remarks",
+  status: "Status",
+  vehicle_number: "Vehicle Number",
+  vehicle_type: "Vehicle Type",
+  whatsapp: "WhatsApp",
+};
+
+const FIELD_ORDER: Record<RecordKind, string[]> = {
+  customer: ["customer_name", "customer_type", "mobile", "whatsapp", "email", "city", "address", "business_name", "status"],
+  vehicle: [
+    "vehicle_number",
+    "vehicle_type",
+    "status",
+    "capacity_weight",
+    "capacity_weight_unit",
+    "capacity_volume",
+    "current_lat",
+    "current_lng",
+  ],
+  load: ["posting_date", "load_type", "origin_city", "destination_city", "status", "remarks"],
+};
+
+const SELECT_OPTIONS: Record<string, string[]> = {
+  capacity_weight_unit: ["", "KG", "Ton", "Maund"],
+  customer_type: ["Individual", "Company", "Broker", "Commodity Owner"],
+  load_type: ["Local", "Line Haul", "Intercity", "Warehouse Transfer"],
+  vehicle_type: ["Truck", "Trailer", "Mazda", "Pickup", "Container", "Dumper", "Other"],
+};
+
+const STATUS_OPTIONS: Record<RecordKind, string[]> = {
+  customer: ["Active", "Inactive", "Blocked"],
+  vehicle: ["Available", "On Trip", "Maintenance", "Blocked"],
+  load: ["Draft", "Booked", "In Transit", "Delivered", "Cancelled"],
+};
+
+function RecordDrawer({
+  busy,
+  record,
+  onClose,
+  onSave,
+}: {
+  busy: boolean;
+  record: EditableRecord;
+  onClose: () => void;
+  onSave: (record: EditableRecord, fields: Record<string, unknown>) => void;
+}) {
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const fields: Record<string, unknown> = {};
+    for (const key of FIELD_ORDER[record.kind]) {
+      if (form.has(key)) {
+        const value = form.get(key);
+        fields[key] = value === "" ? null : value;
+      }
+    }
+    onSave(record, fields);
+  }
+
+  return (
+    <div className="drawer-overlay" role="dialog" aria-modal="true">
+      <aside className="record-drawer">
+        <div className="drawer-head">
+          <div>
+            <p>{record.doctype}</p>
+            <h2>{record.label}</h2>
+            <code>{record.id}</code>
+          </div>
+          <button className="drawer-close" onClick={onClose} type="button" aria-label="Close editor">
+            <X size={18} />
+          </button>
+        </div>
+
+        <form className="drawer-form" onSubmit={submit}>
+          {FIELD_ORDER[record.kind].map((fieldname) => (
+            <EditorField fieldname={fieldname} key={fieldname} kind={record.kind} value={record.fields[fieldname]} />
+          ))}
+
+          <div className="drawer-actions">
+            <button disabled={busy} type="submit">
+              Save Changes
+            </button>
+            <a className="desk-open" href={`${FRAPPE_ORIGIN}${record.desk_url}`} target="_blank" rel="noreferrer">
+              <ExternalLink size={14} />
+              Open Full Desk Form
+            </a>
+          </div>
+        </form>
+      </aside>
+    </div>
+  );
+}
+
+function EditorField({
+  fieldname,
+  kind,
+  value,
+}: {
+  fieldname: string;
+  kind: RecordKind;
+  value: string | number | null | undefined;
+}) {
+  const label = FIELD_LABELS[fieldname] || fieldname;
+  const commonValue = value ?? "";
+  const selectOptions = fieldname === "status" ? STATUS_OPTIONS[kind] : SELECT_OPTIONS[fieldname];
+
+  if (fieldname === "address" || fieldname === "remarks") {
+    return (
+      <label>
+        {label}
+        <textarea name={fieldname} defaultValue={String(commonValue)} />
+      </label>
+    );
+  }
+
+  if (selectOptions) {
+    const options = Array.from(new Set([String(commonValue), ...selectOptions])).filter(Boolean);
+    return (
+      <label>
+        {label}
+        <select name={fieldname} defaultValue={String(commonValue)}>
+          {options.map((option) => (
+            <option key={option}>{option}</option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+
+  const type = fieldname.includes("lat") || fieldname.includes("lng") || fieldname.includes("weight") || fieldname.includes("volume")
+    ? "number"
+    : fieldname === "posting_date"
+      ? "date"
+      : fieldname === "email"
+        ? "email"
+        : "text";
+
+  return (
+    <label>
+      {label}
+      <input name={fieldname} defaultValue={String(commonValue)} step={type === "number" ? "any" : undefined} type={type} />
+    </label>
   );
 }
 
