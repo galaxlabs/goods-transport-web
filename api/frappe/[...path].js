@@ -40,7 +40,7 @@ function toRequestBody(method, rawBody) {
   return JSON.stringify(rawBody);
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   const requestMethod = String(req.method || "GET").toUpperCase();
   const requestOrigin = String(req.headers?.origin || "");
 
