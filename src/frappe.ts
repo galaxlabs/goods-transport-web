@@ -99,7 +99,44 @@ export type LoadResponse = {
   receiver_pay_amount: number;
 };
 
+export type ConnectionStatus = {
+  reachable: boolean;
+  authenticated: boolean;
+  user: string | null;
+  message: string;
+};
+
 const API_BASE = "/api/frappe";
+
+function extractServerMessage(payload: any, fallback: string): string {
+  const raw = payload?._server_messages;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      const first = Array.isArray(parsed) ? parsed[0] : parsed;
+      if (typeof first === "string") {
+        try {
+          const nested = JSON.parse(first);
+          if (nested?.message && typeof nested.message === "string") {
+            return nested.message.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+          }
+          return first;
+        } catch {
+          return first;
+        }
+      }
+      if (first?.message && typeof first.message === "string") {
+        return first.message.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      }
+    } catch {
+      // ignore and continue to fallback
+    }
+  }
+  if (typeof payload?.message === "string" && payload.message.trim()) {
+    return payload.message;
+  }
+  return fallback || "Frappe request failed";
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -115,9 +152,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const payload = await response.json().catch(() => null);
 
   if (!response.ok || payload?.exc) {
-    const message = payload?._server_messages
-      ? JSON.parse(payload._server_messages)[0]
-      : payload?.message || response.statusText;
+    const message = extractServerMessage(payload, response.statusText);
     throw new Error(typeof message === "string" ? message : "Frappe request failed");
   }
 
@@ -219,4 +254,39 @@ export async function listLoads(search = "") {
 
 export async function getFleetMap() {
   return request<FleetMap>("/method/goods_transport.api.simple.get_fleet_map");
+}
+
+export async function getConnectionStatus(): Promise<ConnectionStatus> {
+  try {
+    await request<string>("/method/ping");
+
+    let loggedUser = "Guest";
+    try {
+      loggedUser = await request<string>("/method/frappe.auth.get_logged_user");
+    } catch {
+      return {
+        reachable: true,
+        authenticated: false,
+        user: null,
+        message: "Backend reachable (session not authenticated)",
+      };
+    }
+
+    const authenticated = Boolean(loggedUser && loggedUser !== "Guest");
+    return {
+      reachable: true,
+      authenticated,
+      user: authenticated ? loggedUser : null,
+      message: authenticated
+        ? `Backend reachable • Logged in as ${loggedUser}`
+        : "Backend reachable • Guest session",
+    };
+  } catch (caught) {
+    return {
+      reachable: false,
+      authenticated: false,
+      user: null,
+      message: caught instanceof Error ? caught.message : "Backend unreachable",
+    };
+  }
 }

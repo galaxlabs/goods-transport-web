@@ -22,12 +22,14 @@ import {
 } from "lucide-react";
 import {
   ChartPoint,
+  ConnectionStatus,
   createCustomer,
   createLocalLoad,
   createVehicle,
   CustomerRow,
   DashboardSummary,
   FleetMap,
+  getConnectionStatus,
   getDashboard,
   getFleetMap,
   listCustomers,
@@ -62,6 +64,12 @@ export function DispatchApp() {
   const [fleetMap, setFleetMap] = useState<FleetMap | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sessionUser, setSessionUser] = useState("");
+  const [connection, setConnection] = useState<ConnectionStatus>({
+    reachable: false,
+    authenticated: false,
+    user: null,
+    message: "Checking backend...",
+  });
 
   function pushToast(type: "success" | "error", message: string) {
     const id = Date.now();
@@ -84,13 +92,33 @@ export function DispatchApp() {
     setFleetMap(mapData);
   }
 
+  async function refreshConnection() {
+    const status = await getConnectionStatus();
+    setConnection(status);
+    if (status.authenticated && status.user) {
+      setSessionUser(status.user);
+    }
+  }
+
   useEffect(() => {
-    refreshData("").catch(() => undefined);
+    refreshData("").catch((caught) => {
+      pushToast("error", caught instanceof Error ? caught.message : "Unable to connect to backend");
+    });
+    refreshConnection().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      refreshConnection().catch(() => undefined);
+    }, 20000);
+    return () => window.clearInterval(interval);
   }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      refreshData(search).catch(() => undefined);
+      refreshData(search).catch((caught) => {
+        pushToast("error", caught instanceof Error ? caught.message : "Unable to refresh data");
+      });
     }, 220);
     return () => window.clearTimeout(timer);
   }, [search]);
@@ -103,6 +131,7 @@ export function DispatchApp() {
     try {
       const res = await login(String(form.get("username")), String(form.get("password")));
       if (res.full_name) setSessionUser(res.full_name);
+      await refreshConnection();
       pushToast("success", `Connected as ${res.full_name || "user"}`);
       formEl.reset();
     } catch (caught) {
@@ -269,11 +298,26 @@ export function DispatchApp() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </label>
+          <div
+            className={`connection-pill ${
+              connection.reachable ? (connection.authenticated ? "is-auth" : "is-guest") : "is-offline"
+            }`}
+            title={connection.message}
+          >
+            <span className="dot" aria-hidden="true" />
+            <span>
+              {connection.reachable
+                ? connection.authenticated
+                  ? `API • ${connection.user || "User"}`
+                  : "API • Guest"
+                : "API • Offline"}
+            </span>
+          </div>
           <div className="topbar-session">
-            {sessionUser ? (
+            {connection.reachable ? (
               <span className="topbar-user">
                 <Wifi size={13} />
-                {sessionUser}
+                {connection.authenticated ? connection.user || sessionUser || "Online" : "Online"}
               </span>
             ) : (
               <span className="topbar-offline">

@@ -22,11 +22,28 @@ npm install
 npm run dev                 # starts on :3004
 ```
 
+For secure token-based calls in production, configure server env variables (not `VITE_`) in your host (for example Vercel project settings).
+
 ## Environment
 
 | Variable | Default | Description |
 |---|---|---|
 | `VITE_FRAPPE_URL` | `https://gt.digigalaxy.cloud` | Frappe backend URL |
+| `FRAPPE_BASE_URL` | `https://gt.digigalaxy.cloud` | Server-side proxy target base URL |
+| `FRAPPE_API_KEY` | _(unset)_ | Server-side Frappe API key |
+| `FRAPPE_API_SECRET` | _(unset)_ | Server-side Frappe API secret |
+
+> `VITE_*` variables are public in browser bundles. Never place `FRAPPE_API_SECRET` in client env files.
+
+## Secure proxy route
+
+This project includes a server proxy route at `/api/frappe/*`:
+
+- Route file: `api/frappe/[...path].ts`
+- Frontend continues calling `/api/frappe/...`
+- Proxy forwards to `${FRAPPE_BASE_URL}/api/...`
+- If `FRAPPE_API_KEY` + `FRAPPE_API_SECRET` are set, proxy injects `Authorization: token key:secret`
+- If token vars are not set, proxy forwards browser cookies for session login flow
 
 ## Backend
 
@@ -38,7 +55,7 @@ Requires the [`goods_transport`](https://github.com/galaxlabs/goods_transport) F
 npm run build   # outputs to dist/
 ```
 
-A `vercel.json` is included for one-click Vercel deploys with the API proxy rewrite.
+A `vercel.json` is included for Vite SPA rewrites, and Vercel will serve `api/frappe/[...path].ts` as the secure backend proxy.
 
 ## License
 

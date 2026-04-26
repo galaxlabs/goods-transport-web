@@ -1,10 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/api/frappe/:path*",
-      "destination": "https://gt.digigalaxy.cloud/api/:path*"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

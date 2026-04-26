@@ -379,6 +379,51 @@ textarea {
   flex-shrink: 0;
 }
 
+.connection-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  padding: 0.34rem 0.66rem;
+  font-size: 0.73rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.connection-pill .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.connection-pill.is-auth {
+  background: rgba(47, 140, 91, 0.12);
+  color: var(--green);
+}
+
+.connection-pill.is-auth .dot {
+  background: var(--green);
+}
+
+.connection-pill.is-guest {
+  background: rgba(242, 188, 47, 0.2);
+  color: #8a5c00;
+}
+
+.connection-pill.is-guest .dot {
+  background: #8a5c00;
+}
+
+.connection-pill.is-offline {
+  background: rgba(201, 73, 36, 0.12);
+  color: var(--diesel);
+}
+
+.connection-pill.is-offline .dot {
+  background: var(--diesel);
+}
+
 .topbar-user,
 .topbar-offline {
   display: flex;
@@ -1155,6 +1200,10 @@ td:first-child {
 
   .topbar {
     padding: 0 1rem;
+  }
+
+  .connection-pill {
+    display: none;
   }
 
   .dashboard-grid {
