@@ -106,7 +106,7 @@ export type ConnectionStatus = {
   message: string;
 };
 
-const API_BASE = "/api/frappe";
+const API_BASE = "https://gt.digigalaxy.cloud/api";
 
 function extractServerMessage(payload: any, fallback: string): string {
   const raw = payload?._server_messages;
