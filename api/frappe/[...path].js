@@ -1,6 +1,6 @@
 const DEFAULT_FRAPPE_BASE_URL = "https://gt.digigalaxy.cloud";
 
-function toQueryString(query: Record<string, unknown>, excludeKey: string): string {
+function toQueryString(query, excludeKey) {
   const params = new URLSearchParams();
 
   for (const [key, value] of Object.entries(query || {})) {
@@ -24,7 +24,7 @@ function toQueryString(query: Record<string, unknown>, excludeKey: string): stri
   return result ? `?${result}` : "";
 }
 
-function toRequestBody(method: string, rawBody: unknown): BodyInit | undefined {
+function toRequestBody(method, rawBody) {
   if (method === "GET" || method === "HEAD") {
     return undefined;
   }
@@ -40,7 +40,7 @@ function toRequestBody(method: string, rawBody: unknown): BodyInit | undefined {
   return JSON.stringify(rawBody);
 }
 
-export default async function handler(req: any, res: any) {
+module.exports = async function handler(req, res) {
   const requestMethod = String(req.method || "GET").toUpperCase();
   const requestOrigin = String(req.headers?.origin || "");
 
@@ -101,7 +101,7 @@ export default async function handler(req: any, res: any) {
       res.setHeader("content-type", contentType);
     }
 
-    const setCookieMany = (upstream.headers as any).getSetCookie?.();
+    const setCookieMany = upstream.headers.getSetCookie?.();
     if (Array.isArray(setCookieMany) && setCookieMany.length) {
       res.setHeader("set-cookie", setCookieMany);
     } else {
@@ -114,7 +114,7 @@ export default async function handler(req: any, res: any) {
     const bodyBuffer = Buffer.from(await upstream.arrayBuffer());
     res.send(bodyBuffer);
   } catch (caught) {
-    const message = caught instanceof Error ? caught.message : "Proxy request failed";
+    const message = caught && caught.message ? caught.message : "Proxy request failed";
     res.status(502).json({
       message,
       proxy: "goods-transport-web/api/frappe/[...path]",
