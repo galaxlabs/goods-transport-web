@@ -41,6 +41,23 @@ function toRequestBody(method: string, rawBody: unknown): BodyInit | undefined {
 }
 
 export default async function handler(req: any, res: any) {
+  const requestMethod = String(req.method || "GET").toUpperCase();
+  const requestOrigin = String(req.headers?.origin || "");
+
+  if (requestMethod === "OPTIONS") {
+    if (requestOrigin) {
+      res.setHeader("Access-Control-Allow-Origin", requestOrigin);
+      res.setHeader("Vary", "Origin");
+    }
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      String(req.headers?.["access-control-request-headers"] || "content-type,authorization"),
+    );
+    return res.status(204).end();
+  }
+
   const baseUrl = (process.env.FRAPPE_BASE_URL || process.env.VITE_FRAPPE_URL || DEFAULT_FRAPPE_BASE_URL).replace(
     /\/+$/,
     "",
@@ -54,6 +71,7 @@ export default async function handler(req: any, res: any) {
   const path = Array.isArray(pathParts) ? pathParts.join("/") : String(pathParts || "");
   const query = toQueryString(req.query || {}, "path");
   const upstreamUrl = `${baseUrl}/api/${path}${query}`;
+  const isLoginPath = path === "method/login";
 
   const upstreamHeaders = new Headers();
   upstreamHeaders.set("Accept", String(req.headers?.accept || "application/json"));
@@ -62,7 +80,7 @@ export default async function handler(req: any, res: any) {
     upstreamHeaders.set("Content-Type", String(req.headers["content-type"]));
   }
 
-  if (hasTokenAuth) {
+  if (hasTokenAuth && !isLoginPath) {
     upstreamHeaders.set("Authorization", `token ${apiKey}:${apiSecret}`);
   } else if (req.headers?.cookie) {
     upstreamHeaders.set("Cookie", String(req.headers.cookie));
@@ -70,9 +88,9 @@ export default async function handler(req: any, res: any) {
 
   try {
     const upstream = await fetch(upstreamUrl, {
-      method: req.method,
+      method: requestMethod,
       headers: upstreamHeaders,
-      body: toRequestBody(String(req.method || "GET").toUpperCase(), req.body),
+      body: toRequestBody(requestMethod, req.body),
       redirect: "manual",
     });
 

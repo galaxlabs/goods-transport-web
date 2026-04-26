@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/frappe/:path*",
+      "destination": "/api/frappe/:path*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
